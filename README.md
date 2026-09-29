@@ -4,6 +4,10 @@
 sensores em grandezas físicas da máquina sobe de 75 para 86 as falhas antecipadas
 em cada 100.**
 
+**[→ Abrir o painel interativo](https://goveiadev.github.io/d1-previsao-falhas-fresadora/painel/)** —
+mova o limite de alarme, veja cada falha sendo antecipada ou escapando, e coloque o
+custo de parada da sua operação para ver quanto isso vale em reais.
+
 ![Capa do projeto](capa.png)
 
 ## A pergunta
@@ -64,6 +68,11 @@ desgaste da ferramenta. E todas as 46 falhas desse tipo no dataset aconteceram e
 preventiva por tempo de uso**. O modelo cobre o que depende das condições de
 operação; a troca programada cobre o que depende do relógio.
 
+Somando as duas coisas — o modelo com física da máquina e uma troca da ferramenta ao
+atingir 195 minutos de uso — o teste chega a **83 de 85 falhas cobertas, 98 em cada
+100**. A conta assume que a troca impede as falhas por desgaste que aconteceriam
+depois dela, e não inclui o custo da vida útil de ferramenta descartada.
+
 **Quando vale ligar o alarme:** todo alarme gera uma inspeção. Com 0,42 alarme falso
 por falha pega, o alarme compensa sempre que uma falha custar mais que **1,42
 inspeções** — um patamar que quase qualquer parada de linha supera.
@@ -101,6 +110,15 @@ curl -L -o dados/ai4i2020.csv https://archive.ics.uci.edu/static/public/601/data
 O notebook [`analise.ipynb`](analise.ipynb) já está salvo com as saídas executadas —
 dá para ler sem rodar nada. A semente aleatória é fixa (42), então a execução
 reproduz os números acima.
+
+O painel (`painel/`) é HTML estático, sem dependências externas. A execução do
+notebook regrava `painel/dados.js` com as previsões do conjunto de teste, e o painel
+recalcula tudo no navegador a partir delas. Para abrir localmente:
+
+```bash
+python -m http.server 8000
+# e abra http://localhost:8000/painel/
+```
 
 ---
 

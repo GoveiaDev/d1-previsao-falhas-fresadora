@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Previsão de falhas · Painel D1</title>
+<meta name="description" content="O mesmo modelo antecipou 86 falhas em cada 100, em vez de 75. A diferença não foi o algoritmo: foi olhar os dados como um técnico de manutenção olha a máquina.">
+<meta property="og:title" content="A diferença não foi o algoritmo — 75 → 86 falhas antecipadas">
+<meta property="og:description" content="Painel interativo: mova o limite de alarme, veja quais falhas o modelo pega e quanto isso vale na sua operação.">
+<meta property="og:image" content="https://goveiadev.github.io/d1-previsao-falhas-fresadora/painel/og.png">
+<meta property="og:type" content="website">
+<style>
+  @font-face { font-family: 'Manrope'; src: url('fonts/manrope-latin.woff2') format('woff2'); font-weight: 200 800; font-display: swap; }
+  @font-face { font-family: 'Inter'; src: url('fonts/inter-latin.woff2') format('woff2'); font-weight: 300 800; font-display: swap; }
+  @font-face { font-family: 'Source Code Pro'; src: url('fonts/source-code-pro-latin.woff2') format('woff2'); font-weight: 200 900; font-display: swap; }
+
+  :root {
+    color-scheme: light;
+    --fundo: #f8fafc;
+    --superficie: #ffffff;
+    --tinta: #0f172a;
+    --tinta-2: #475569;
+    --apoio: #64748b;
+    --regua: #e2e8f0;
+    --acao: #1d4ed8;          /* série em foco: com física da máquina */
+    --contexto: #64748b;      /* série de contexto: leituras brutas */
+    --metrica: #0e7490;
+    --ruim: #dc2626;          /* só o estado ruim: falha que escapou */
+    --ruim-fundo: #fef2f2;
+    --r: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--fundo);
+    color: var(--tinta);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .pagina { max-width: 1040px; margin: 0 auto; padding: 48px 24px 64px; }
+  @media (max-width: 640px) { .pagina { padding: 28px 16px 48px; } }
+
+  .rotulo {
+    font-family: 'Source Code Pro', ui-monospace, monospace;
+    font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--apoio);
+  }
+  h1, h2 { font-family: 'Manrope', 'Inter', sans-serif; letter-spacing: -0.028em; line-height: 1.12; }
+  h1 { font-size: clamp(34px, 6vw, 60px); font-weight: 800; margin: 14px 0 16px; }
+  h2 { font-size: clamp(24px, 3.4vw, 34px); font-weight: 700; margin: 8px 0 10px; }
+  .lead { font-size: 19px; color: var(--tinta-2); max-width: 700px; }
+  .texto { color: var(--tinta-2); max-width: 720px; }
+  .texto + .texto { margin-top: 10px; }
+  strong { color: var(--tinta); font-weight: 650; }
+
+  section { margin-top: 72px; }
+  @media (max-width: 640px) { section { margin-top: 56px; } }
+
+  .cartao {
+    background: var(--superficie);
+    border: 1px solid var(--regua);
+    border-radius: var(--r);
+    padding: 24px;
+  }
+  @media (max-width: 640px) { .cartao { padding: 18px 16px; } }
+
+  /* ── Hero ─────────────────────────────────────────────── */
+  .placar { display: flex; align-items: center; gap: 28px 40px; margin-top: 36px; flex-wrap: wrap; }
+  .tile { flex: 0 1 260px; }
+  .extra { margin-top: 24px; padding: 14px 18px; border-left: 3px solid var(--metrica); background: var(--superficie); border-radius: 0 var(--r) var(--r) 0; max-width: 720px; color: var(--tinta-2); }
+  .extra b { font-family: 'Manrope', sans-serif; font-size: 22px; color: var(--metrica); }
+  .tile .valor { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(64px, 11vw, 112px); line-height: 1; letter-spacing: -0.04em; }
+  .tile .legenda { color: var(--tinta-2); margin-top: 8px; font-size: 15px; }
+  .tile.antes .valor { color: #94a3b8; }
+  .tile.depois .valor { color: var(--metrica); }
+  .seta { font-size: 40px; color: var(--apoio); flex: 0 0 auto; }
+  @media (max-width: 640px) { .seta { display: none; } }
+
+  .armadilha { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 20px; }
+  .armadilha .valor { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 44px; letter-spacing: -0.03em; line-height: 1.1; }
+  .armadilha .ruim { color: var(--ruim); }
+  @media (max-width: 520px) { .armadilha { grid-template-columns: 1fr; } }
+
+  /* ── Controles ────────────────────────────────────────── */
+  .controle { margin: 24px 0 8px; }
+  .controle label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .controle .leitura { font-family: 'Source Code Pro', monospace; color: var(--acao); font-weight: 600; }
+  input[type=range] { width: 100%; max-width: 560px; accent-color: var(--acao); height: 28px; cursor: pointer; }
+  .extremos { display: flex; justify-content: space-between; max-width: 560px; font-size: 13px; color: var(--apoio); }
+
+  /* ── Grade de falhas ──────────────────────────────────── */
+  .versoes { display: grid; gap: 16px; margin-top: 20px; }
+  .versao-topo { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .versao-nome { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .chip { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .versao-numeros { font-size: 15px; color: var(--tinta-2); }
+  .versao-numeros b { font-family: 'Manrope', sans-serif; font-size: 22px; color: var(--tinta); font-weight: 800; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(22px, 1fr)); gap: 2px; }
+  .ponto { aspect-ratio: 1; display: grid; place-items: center; cursor: default; border-radius: 4px; }
+  .ponto::after { content: ''; width: 64%; height: 64%; border-radius: 50%; }
+  .ponto.pega.fisica::after { background: var(--acao); }
+  .ponto.pega.brutas::after { background: var(--contexto); }
+  .ponto.perdida::after { background: var(--ruim-fundo); box-shadow: inset 0 0 0 2px var(--ruim); }
+  .ponto:hover, .ponto:focus-visible { background: #f1f5f9; outline: none; }
+  .legenda-grade { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 14px; font-size: 14px; color: var(--tinta-2); }
+  .legenda-grade span { display: inline-flex; align-items: center; gap: 6px; }
+  .mini { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .mini.cheio { background: var(--acao); }
+  .mini.vazio { background: var(--ruim-fundo); box-shadow: inset 0 0 0 2px var(--ruim); }
+
+  .falsos { margin-top: 12px; font-size: 14px; color: var(--tinta-2); }
+
+  /* ── Gráficos ─────────────────────────────────────────── */
+  .grafico { position: relative; margin-top: 16px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .eixo text, .rotulo-eixo { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: var(--apoio); font-variant-numeric: tabular-nums; }
+  .grade-linha { stroke: var(--regua); stroke-width: 1; }
+  .dica {
+    position: absolute; pointer-events: none; background: var(--tinta); color: #fff;
+    font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 8px;
+    white-space: nowrap; opacity: 0; transition: opacity .12s; z-index: 5;
+  }
+  .dica b { color: #fff; }
+
+  details { margin-top: 14px; font-size: 14px; color: var(--tinta-2); }
+  summary { cursor: pointer; color: var(--acao); font-weight: 600; }
+  table { border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 12px; border-bottom: 1px solid var(--regua); }
+  th:first-child, td:first-child { text-align: left; }
+
+  /* ── Calculadora ──────────────────────────────────────── */
+  .entradas { display: grid; grid-template-columns: repeat(2, minmax(0, 260px)); gap: 16px; margin-top: 20px; }
+  @media (max-width: 520px) { .entradas { grid-template-columns: 1fr; } }
+  .entradas label { font-weight: 600; font-size: 15px; display: block; margin-bottom: 6px; }
+  .campo { display: flex; align-items: center; border: 1px solid var(--regua); border-radius: 10px; background: #fff; overflow: hidden; }
+  .campo span { padding: 0 10px; color: var(--apoio); font-family: 'Source Code Pro', monospace; font-size: 14px; }
+  .campo input { border: 0; padding: 12px 12px 12px 0; font: inherit; width: 100%; outline: none; }
+  .campo:focus-within { border-color: var(--acao); box-shadow: 0 0 0 3px #dbeafe; }
+  .aviso { font-size: 13px; color: var(--apoio); margin-top: 8px; }
+  .custos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+  @media (max-width: 720px) { .custos { grid-template-columns: 1fr; } }
+  .custo .nome { font-size: 14px; color: var(--tinta-2); display: flex; align-items: center; gap: 8px; }
+  .custo .valor { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 30px; letter-spacing: -0.02em; margin-top: 4px; }
+  .custo .detalhe { font-size: 13px; color: var(--apoio); margin-top: 4px; }
+  .destaque-ganho { margin-top: 20px; padding: 18px 20px; border-radius: var(--r); background: #ecfeff; border: 1px solid #a5f3fc; }
+  .destaque-ganho .valor { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(30px, 5vw, 42px); color: var(--metrica); letter-spacing: -0.03em; }
+
+  /* ── Rodapé ───────────────────────────────────────────── */
+  .limitacoes li { margin: 0 0 8px 20px; color: var(--tinta-2); }
+  footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--regua); font-size: 14px; color: var(--apoio); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  a { color: var(--acao); text-underline-offset: 3px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="pagina">
+
+  <!-- ═══ Hero ═══════════════════════════════════════════ -->
+  <header>
+    <div class="rotulo">Projeto D1 · Manutenção preditiva</div>
+    <h1>A diferença não foi o algoritmo.</h1>
+    <p class="lead">Treinei o <strong>mesmo modelo</strong> duas vezes para prever falhas numa fresadora. Mudei só a forma de olhar os dados: do sensor bruto para a <strong>física da máquina</strong> — o que um técnico de manutenção olha no campo.</p>
+
+    <div class="placar" aria-label="Resultado principal">
+      <div class="tile antes">
+        <div class="valor" id="heroAntes">–</div>
+        <div class="legenda">falhas antecipadas em cada 100<br>com as leituras brutas dos sensores</div>
+      </div>
+      <div class="seta" aria-hidden="true">→</div>
+      <div class="tile depois">
+        <div class="valor" id="heroDepois">–</div>
+        <div class="legenda">falhas antecipadas em cada 100<br>com potência, temperatura e desgaste</div>
+      </div>
+    </div>
+    <p class="texto" style="margin-top:20px">Mesmo limite nas duas: no máximo <strong>1 alarme falso a cada 2 falhas pegas</strong>. Avaliado em <span id="nTeste">2.500</span> registros que o modelo nunca viu.</p>
+    <p class="extra">E somando uma regra que não precisa de IA nenhuma — trocar a ferramenta por tempo de uso — chega a <b id="heroCombinado">–</b> em cada 100. <a href="#t4">Veja por quê</a>.</p>
+  </header>
+
+  <!-- ═══ 1. A armadilha ════════════════════════════════ -->
+  <section aria-labelledby="t1">
+    <div class="rotulo">1 · Antes de tudo</div>
+    <h2 id="t1">Acurácia alta não quer dizer nada aqui.</h2>
+    <p class="texto">Só <span id="pctFalhas">3,4%</span> dos registros são falha. Então um "modelo" que <strong>sempre</strong> responde "não vai falhar" parece excelente — e é inútil.</p>
+    <div class="armadilha">
+      <div class="cartao">
+        <div class="valor" id="acuraciaNunca">96,6%</div>
+        <div class="texto">de acerto de quem nunca prevê falha</div>
+      </div>
+      <div class="cartao">
+        <div class="valor ruim">0</div>
+        <div class="texto">falhas antecipadas por ele</div>
+      </div>
+    </div>
+    <p class="texto" style="margin-top:16px">Por isso este painel mede o que importa para quem decide parar a máquina: <strong>quantas falhas o alarme pega</strong> e <strong>quantas vezes ele chama a equipe à toa</strong>.</p>
+  </section>
+
+  <!-- ═══ 2. Mova o alarme ══════════════════════════════ -->
+  <section aria-labelledby="t2">
+    <div class="rotulo">2 · Experimente</div>
+    <h2 id="t2">Quanto alarme falso a sua equipe aguenta?</h2>
+    <p class="texto">Todo alarme tem um preço: deixar ele mais sensível pega mais falhas, mas chama a equipe mais vezes à toa. Arraste e veja as duas versões do modelo responderem.</p>
+
+    <div class="controle">
+      <label for="tolerancia">Alarmes falsos aceitos por falha pega: <span class="leitura" id="toleranciaTexto"></span></label>
+      <input type="range" id="tolerancia" min="0.1" max="2" step="0.05" value="0.5" aria-describedby="toleranciaTexto">
+      <div class="extremos"><span>poucos alarmes, equipe confia</span><span>muitos alarmes, pega quase tudo</span></div>
+    </div>
+
+    <div class="versoes" aria-live="polite">
+      <div class="cartao" id="cartaoFisica"></div>
+      <div class="cartao" id="cartaoBrutas"></div>
+    </div>
+    <div class="legenda-grade">
+      <span><i class="mini cheio"></i> falha antecipada pelo alarme</span>
+      <span><i class="mini vazio"></i> falha que escapou</span>
+      <span>Cada ponto é uma das <b id="nFalhas">85</b> falhas reais do teste, agrupadas por tipo.</span>
+    </div>
+
+    <div class="cartao" style="margin-top:16px">
+      <div class="rotulo">A curva inteira</div>
+      <p class="texto" style="margin-top:6px">Cada ponto da linha é um jeito possível de regular o alarme. A linha azul fica acima em quase todo o caminho: <strong>para qualquer nível de alarme falso, a versão com física da máquina pega mais falhas</strong>.</p>
+      <div class="grafico" id="graficoCurva">
+        <svg id="svgCurva" viewBox="0 0 900 380" role="img" aria-label="Curva de falhas antecipadas em cada 100 por alarmes falsos por falha pega, para as duas versões"></svg>
+        <div class="dica" id="dicaCurva"></div>
+      </div>
+      <details>
+        <summary>Ver os números em tabela</summary>
+        <table id="tabelaCurva"></table>
+      </details>
+    </div>
+  </section>
+
+  <!-- ═══ 3. Quanto vale ════════════════════════════════ -->
+  <section aria-labelledby="t3">
+    <div class="rotulo">3 · Na sua operação</div>
+    <h2 id="t3">Quanto isso vale em reais?</h2>
+    <p class="texto">Falha que escapa vira parada não planejada. Alarme — verdadeiro ou falso — vira uma inspeção. Coloque os custos da sua operação e veja a conta, no nível de alarme escolhido acima.</p>
+
+    <div class="entradas">
+      <div>
+        <label for="custoFalha">Custo de uma falha não antecipada</label>
+        <div class="campo"><span>R$</span><input id="custoFalha" type="number" min="0" step="500" value="10000" inputmode="numeric"></div>
+      </div>
+      <div>
+        <label for="custoInspecao">Custo de uma inspeção</label>
+        <div class="campo"><span>R$</span><input id="custoInspecao" type="number" min="0" step="50" value="300" inputmode="numeric"></div>
+      </div>
+    </div>
+    <p class="aviso">Valores iniciais são só exemplo, não dado de mercado. Troque pelos da sua operação: parada, peça perdida, hora extra, e o tempo de uma inspeção.</p>
+
+    <div class="custos" id="custos" aria-live="polite"></div>
+    <div class="destaque-ganho" id="ganho" aria-live="polite"></div>
+    <p class="aviso" id="baseCusto"></p>
+  </section>
+
+  <!-- ═══ 4. O que escapou ══════════════════════════════ -->
+  <section aria-labelledby="t4">
+    <div class="rotulo">4 · O que o modelo não pega</div>
+    <h2 id="t4">Nem todo problema é problema de IA.</h2>
+    <p class="texto">Quase todas as falhas que escapam são de <strong>desgaste da ferramenta</strong>. E elas não acontecem a qualquer hora: todas as <b id="nTwf">46</b> do dataset aconteceram numa janela estreita de tempo de uso.</p>
+    <p class="texto">Janela conhecida não pede previsão. Pede <strong>troca preventiva por tempo</strong>. Escolha quando trocar a ferramenta:</p>
+
+    <div class="controle">
+      <label for="troca">Trocar a ferramenta ao atingir <span class="leitura" id="trocaTexto"></span></label>
+      <input type="range" id="troca" min="150" max="260" step="5" value="195">
+      <div class="extremos"><span>troca cedo, descarta vida útil</span><span>troca tarde, deixa falhar</span></div>
+    </div>
+
+    <div class="cartao">
+      <div class="grafico" id="graficoDesgaste">
+        <svg id="svgDesgaste" viewBox="0 0 900 300" role="img" aria-label="Distribuição do tempo de uso da ferramenta no momento das falhas por desgaste"></svg>
+        <div class="dica" id="dicaDesgaste"></div>
+      </div>
+      <div class="legenda-grade">
+        <span><i class="chip" style="background:var(--acao)"></i> evitadas pela troca</span>
+        <span><i class="chip" style="background:#cbd5e1"></i> ainda acontecem</span>
+      </div>
+    </div>
+    <div class="custos" id="combinado" aria-live="polite"></div>
+  </section>
+
+  <!-- ═══ 5. Como foi feito ═════════════════════════════ -->
+  <section aria-labelledby="t5">
+    <div class="rotulo">5 · Como foi feito</div>
+    <h2 id="t5">Método e limites, sem letra miúda.</h2>
+    <div class="cartao">
+      <p class="texto"><strong>Dados:</strong> <a href="https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset">AI4I 2020 Predictive Maintenance Dataset</a> (UCI), 10.000 registros de operação de uma fresadora.</p>
+      <p class="texto"><strong>Modelo:</strong> o mesmo Random Forest nas duas versões, sem ajuste de hiperparâmetros. A versão "com física" recebe três grandezas a mais: potência (torque × rotação), diferença entre a temperatura do processo e a do ar, e desgaste × torque.</p>
+      <p class="texto"><strong>Avaliação:</strong> o limite do alarme do número principal foi escolhido só com dados de treino, por validação cruzada. Os números vêm de <span id="nTeste2">2.500</span> registros separados antes de tudo.</p>
+      <p class="texto"><strong>Sobre o controle deslizante:</strong> em cada posição, o painel mostra o melhor ponto que o modelo alcança nesse mesmo teste. Por isso o número de alarmes falsos pode sair um pouco menor que o do número principal, que usa o limite escolhido só com dados de treino — o mais honesto dos dois.</p>
+      <p class="texto"><strong>Troca preventiva:</strong> a conta assume que trocar a ferramenta ao atingir o tempo escolhido impede as falhas por desgaste que aconteceriam depois dele.</p>
+      <p class="texto" style="margin-top:18px"><strong>O que este resultado não permite afirmar:</strong></p>
+      <ul class="limitacoes" style="margin-top:8px">
+        <li><strong>O dataset é sintético.</strong> Foi gerado para imitar uma operação real, porque dados reais de manutenção quase nunca podem ser publicados.</li>
+        <li><strong>As falhas foram geradas a partir das mesmas grandezas físicas que usei.</strong> Numa máquina real o ganho existe, mas deve ser menor que o medido aqui.</li>
+        <li><strong>Cada registro é um instante.</strong> O modelo não vê a tendência ao longo do tempo, e não mede com quanta antecedência a falha seria avisada.</li>
+        <li><strong>A troca preventiva também tem custo:</strong> ferramenta trocada antes do fim da vida útil. O painel mostra falhas evitadas, não esse descarte.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <span>Ramon Goveia · projeto D1 do portfólio</span>
+    <span><a href="https://github.com/GoveiaDev/d1-previsao-falhas-fresadora">Código, notebook e README</a> · <a href="https://www.linkedin.com/in/ramon-goveia-92266443">LinkedIn</a></span>
+  </footer>
+</main>
+
+<script src="dados.js"></script>
+<script>
+(() => {
+  const D = window.D1;
+  const y = D.y;
+  const N = y.length;
+  const POS = y.reduce((s, v) => s + v, 0);
+  const fmt = (v, d = 0) => v.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const brl = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  const $ = id => document.getElementById(id);
+
+  // Mesma grade de limiares do notebook (0,02 a 0,97, passo 0,01).
+  const LIMIARES = Array.from({ length: 96 }, (_, i) => Math.round((0.02 + i * 0.01) * 100) / 100);
+
+  function avaliar(prob, t) {
+    let tp = 0, fp = 0;
+    for (let i = 0; i < N; i++) if (prob[i] >= t) { if (y[i]) tp++; else fp++; }
+    return { t, tp, fp, fn: POS - tp };
+  }
+  const tabelas = {
+    fisica: LIMIARES.map(t => avaliar(D.prob_fisica, t)),
+    brutas: LIMIARES.map(t => avaliar(D.prob_brutas, t)),
+  };
+  const PROB = { fisica: D.prob_fisica, brutas: D.prob_brutas };
+
+  // Melhor ponto dentro da tolerância: mais falhas pegas; no empate, menos alarmes falsos.
+  function melhor(versao, tol) {
+    let b = null;
+    for (const p of tabelas[versao]) {
+      if (!p.tp || p.fp / p.tp > tol + 1e-9) continue;
+      if (!b || p.tp > b.tp || (p.tp === b.tp && p.fp < b.fp)) b = p;
+    }
+    return b || { t: 1, tp: 0, fp: 0, fn: POS };
+  }
+  const por100 = p => 100 * p.tp / POS;
+
+  // ── Hero: limiares escolhidos no treino, exatamente como no README ──
+  const heroB = avaliar(D.prob_brutas, D.limiar.brutas);
+  const heroF = avaliar(D.prob_fisica, D.limiar.fisica);
+  $('heroAntes').textContent = fmt(por100(heroB));
+  $('heroDepois').textContent = fmt(por100(heroF));
+  $('nTeste').textContent = $('nTeste2').textContent = fmt(N);
+  $('nFalhas').textContent = POS;
+  $('acuraciaNunca').textContent = fmt(100 * D.acuracia_nunca_falha, 1) + '%';
+  $('pctFalhas').textContent = fmt(100 * (1 - D.acuracia_nunca_falha), 1) + '%';
+
+  // Falhas do teste em ordem fixa, agrupadas por tipo, para as duas grades.
+  const ORDEM_TIPO = ['desgaste da ferramenta', 'dissipação de calor', 'potência fora da faixa', 'sobrecarga', 'aleatória', 'sem tipo registrado'];
+  const falhas = [];
+  for (let i = 0; i < N; i++) if (y[i]) falhas.push(i);
+  falhas.sort((a, b) => ORDEM_TIPO.indexOf(D.tipo[a]) - ORDEM_TIPO.indexOf(D.tipo[b]) || D.prob_fisica[b] - D.prob_fisica[a]);
+
+  // Hero combinado: limite do treino + troca preventiva no valor inicial do controle.
+  const TROCA_INICIAL = 195;
+  let cobertasHero = 0;
+  for (const i of falhas) if (D.prob_fisica[i] < D.limiar.fisica && D.twf[i] && D.desgaste[i] >= TROCA_INICIAL) cobertasHero++;
+  $('heroCombinado').textContent = fmt(100 * (heroF.tp + cobertasHero) / POS);
+
+  const NOME = { fisica: 'Com física da máquina', brutas: 'Leituras brutas' };
+  const COR = { fisica: 'var(--acao)', brutas: 'var(--contexto)' };
+
+  function textoTolerancia(tol) {
+    if (tol < 1) {
+      const n = 1 / tol;
+      return Number.isInteger(Math.round(n * 100) / 100) ? `${fmt(tol, 2)} — 1 a cada ${fmt(n)} acertos` : fmt(tol, 2);
+    }
+    return fmt(tol, 2);
+  }
+
+  function desenharVersao(versao, p) {
+    const cartao = $(versao === 'fisica' ? 'cartaoFisica' : 'cartaoBrutas');
+    const prob = PROB[versao];
+    const pontos = falhas.map((i, k) => {
+      const pega = prob[i] >= p.t;
+      const rotulo = `Falha ${k + 1}: ${D.tipo[i]} — ${pega ? 'antecipada' : 'escapou'} (probabilidade ${fmt(prob[i] * 100)}%)`;
+      return `<div class="ponto ${pega ? 'pega' : 'perdida'} ${versao}" tabindex="0" title="${rotulo}" aria-label="${rotulo}"></div>`;
+    }).join('');
+    cartao.innerHTML = `
+      <div class="versao-topo">
+        <div class="versao-nome"><i class="chip" style="background:${COR[versao]}"></i>${NOME[versao]}</div>
+        <div class="versao-numeros"><b>${fmt(por100(p))}</b> em cada 100 &nbsp;·&nbsp; ${p.tp} de ${POS} pegas &nbsp;·&nbsp; ${p.fp} alarmes falsos</div>
+      </div>
+      <div class="grade">${pontos}</div>`;
+  }
+
+  // ── Curva de trade-off (SVG) ──
+  const CURVA = { x0: 64, x1: 868, y0: 20, y1: 330, xMax: 2.5, yMin: 40, yMax: 100 };
+  const sx = v => CURVA.x0 + (Math.min(v, CURVA.xMax) / CURVA.xMax) * (CURVA.x1 - CURVA.x0);
+  const sy = v => CURVA.y1 - ((Math.max(v, CURVA.yMin) - CURVA.yMin) / (CURVA.yMax - CURVA.yMin)) * (CURVA.y1 - CURVA.y0);
+  // Envelope: para cada tolerância x, o melhor que a versão alcança.
+  const envelope = versao => x => por100(melhor(versao, x));
+
+  // Os gráficos são desenhados na largura real do contêiner, para o texto dos
+  // eixos manter o tamanho no celular em vez de encolher junto com o SVG.
+  const largura = el => Math.max(300, Math.round(el.getBoundingClientRect().width));
+
+  function desenharCurva(tol) {
+    const svg = $('svgCurva');
+    const W = largura(svg.parentElement), estreito = W < 560;
+    const H = estreito ? 300 : 380;
+    CURVA.x0 = estreito ? 40 : 64; CURVA.x1 = W - (estreito ? 12 : 32); CURVA.y1 = H - 50;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    let h = '';
+    for (let v = 40; v <= 100; v += 20) h += `<line class="grade-linha" x1="${CURVA.x0}" x2="${CURVA.x1}" y1="${sy(v)}" y2="${sy(v)}"/><text class="rotulo-eixo" x="${CURVA.x0 - 10}" y="${sy(v) + 4}" text-anchor="end">${v}</text>`;
+    for (let v = 0; v <= 2.5; v += 0.5) h += `<text class="rotulo-eixo" x="${sx(v)}" y="${CURVA.y1 + 22}" text-anchor="${v === 2.5 ? 'end' : 'middle'}">${fmt(v, 1)}</text>`;
+    h += `<text class="rotulo-eixo" x="${(CURVA.x0 + CURVA.x1) / 2}" y="${CURVA.y1 + 46}" text-anchor="middle">alarmes falsos por falha pega</text>`;
+    h += `<text class="rotulo-eixo" x="${CURVA.x0}" y="10">falhas antecipadas em cada 100</text>`;
+    // Marca da tolerância escolhida
+    h += `<line x1="${sx(tol)}" x2="${sx(tol)}" y1="${CURVA.y0}" y2="${CURVA.y1}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4"/>`;
+    for (const [versao, larg] of [['brutas', 2], ['fisica', 2.5]]) {
+      // Curva em degraus: para cada nível de tolerância, o melhor que a versão alcança.
+      const env = envelope(versao);
+      let d = '', anterior = null;
+      for (let x = 0; x <= CURVA.xMax + 1e-9; x += 0.01) {
+        const v = env(x);
+        if (anterior === null) d += `M${sx(x).toFixed(1)},${sy(v).toFixed(1)}`;
+        else if (v !== anterior) d += `H${sx(x).toFixed(1)}V${sy(v).toFixed(1)}`;
+        anterior = v;
+      }
+      d += `H${sx(CURVA.xMax).toFixed(1)}`;
+      h += `<path d="${d}" fill="none" stroke="${versao === 'fisica' ? '#1d4ed8' : '#64748b'}" stroke-width="${larg}" stroke-linejoin="round"/>`;
+      const m = melhor(versao, tol);
+      h += `<circle cx="${sx(m.fp / m.tp)}" cy="${sy(por100(m))}" r="6" fill="${versao === 'fisica' ? '#1d4ed8' : '#64748b'}" stroke="#fff" stroke-width="2"/>`;
+    }
+    // Rótulos diretos na ponta direita
+    h += `<text x="${CURVA.x1}" y="${sy(envelope('fisica')(2.5)) - 10}" text-anchor="end" font-size="14" font-weight="700" fill="#1d4ed8">com física da máquina</text>`;
+    h += `<text x="${sx(1.05)}" y="${sy(envelope('brutas')(1.05)) + 22}" text-anchor="start" font-size="14" fill="#475569">leituras brutas</text>`;
+    // Camada de hover
+    h += `<line id="mira" y1="${CURVA.y0}" y2="${CURVA.y1}" stroke="#0f172a" stroke-width="1" opacity="0"/>`;
+    h += `<rect id="alvoCurva" x="${CURVA.x0}" y="${CURVA.y0}" width="${CURVA.x1 - CURVA.x0}" height="${CURVA.y1 - CURVA.y0}" fill="transparent"/>`;
+    svg.innerHTML = h;
+
+    const dica = $('dicaCurva'), mira = $('mira');
+    const alvo = $('alvoCurva');
+    const mover = ev => {
+      const r = svg.getBoundingClientRect();
+      const px = (ev.clientX - r.left) * (W / r.width);
+      const x = Math.max(0.05, Math.min(CURVA.xMax, ((px - CURVA.x0) / (CURVA.x1 - CURVA.x0)) * CURVA.xMax));
+      mira.setAttribute('x1', sx(x)); mira.setAttribute('x2', sx(x)); mira.setAttribute('opacity', .25);
+      dica.innerHTML = `Até <b>${fmt(x, 2)}</b> alarme falso por acerto<br>com física: <b>${fmt(envelope('fisica')(x))}</b> em cada 100<br>leituras brutas: <b>${fmt(envelope('brutas')(x))}</b> em cada 100`;
+      dica.style.opacity = 1;
+      const gx = (ev.clientX - r.left);
+      dica.style.left = Math.min(gx + 14, r.width - dica.offsetWidth - 4) + 'px';
+      dica.style.top = Math.max(0, (ev.clientY - r.top) - 70) + 'px';
+    };
+    alvo.addEventListener('pointermove', mover);
+    alvo.addEventListener('pointerleave', () => { dica.style.opacity = 0; mira.setAttribute('opacity', 0); });
+  }
+
+  function desenharTabela() {
+    const linhas = [0.25, 0.5, 1, 1.5, 2].map(t => {
+      const f = melhor('fisica', t), b = melhor('brutas', t);
+      return `<tr><td>até ${fmt(t, 2)}</td><td>${fmt(por100(b))}</td><td>${fmt(por100(f))}</td></tr>`;
+    }).join('');
+    $('tabelaCurva').innerHTML = `<thead><tr><th>Alarmes falsos por acerto</th><th>Leituras brutas</th><th>Com física</th></tr></thead><tbody>${linhas}</tbody>`;
+  }
+
+  // ── Calculadora ──
+  function desenharCustos(tol) {
+    const cf = Math.max(0, +$('custoFalha').value || 0);
+    const ci = Math.max(0, +$('custoInspecao').value || 0);
+    const custo = p => p.fn * cf + (p.tp + p.fp) * ci;
+    const f = melhor('fisica', tol), b = melhor('brutas', tol);
+    const semModelo = POS * cf;
+    const cartao = (nome, cor, v, det) => `<div class="cartao custo"><div class="nome">${cor ? `<i class="chip" style="background:${cor}"></i>` : ''}${nome}</div><div class="valor">${brl(v)}</div><div class="detalhe">${det}</div></div>`;
+    $('custos').innerHTML =
+      cartao('Sem alarme nenhum', '', semModelo, `${POS} falhas viram parada`) +
+      cartao('Leituras brutas', 'var(--contexto)', custo(b), `${b.fn} paradas + ${b.tp + b.fp} inspeções`) +
+      cartao('Com física da máquina', 'var(--acao)', custo(f), `${f.fn} paradas + ${f.tp + f.fp} inspeções`);
+    const dif = custo(b) - custo(f);
+    $('ganho').innerHTML = dif === 0
+      ? `<div class="texto">Com esses custos, as duas versões <strong>empatam</strong>: o que se ganha em falhas evitadas se perde em inspeções. Experimente um custo de falha maior.</div>`
+      : dif > 0
+      ? `<div class="texto">Olhar os dados com a física da máquina economiza</div><div class="valor">${brl(dif)}</div><div class="texto">a mais que as leituras brutas — sem trocar o modelo.</div>`
+      : `<div class="texto">Com esses custos, as leituras brutas saem <strong>${brl(-dif)}</strong> mais baratas: as inspeções extras pesam mais que as falhas evitadas. Experimente um custo de falha maior.</div>`;
+    $('baseCusto').textContent = `Conta feita sobre os ${fmt(N)} registros de teste, que tiveram ${POS} falhas. Cada alarme gera uma inspeção; cada falha antecipada vira só a inspeção, não a parada.`;
+  }
+
+  // ── Desgaste: histograma + troca preventiva ──
+  function desenharDesgaste(troca, tol) {
+    const svg = $('svgDesgaste');
+    const valores = D.desgaste_twf_todas;
+    const ini = 150, fim = 260, passo = 5;
+    const bins = [];
+    for (let a = ini; a < fim; a += passo) bins.push({ a, b: a + passo, n: valores.filter(v => v >= a && v < a + passo).length });
+    const maxN = Math.max(...bins.map(b => b.n));
+    const W = largura(svg.parentElement), estreito = W < 560;
+    svg.setAttribute('viewBox', `0 0 ${W} 300`);
+    const X0 = estreito ? 30 : 48, X1 = W - (estreito ? 10 : 20), Y0 = 44, Y1 = 230;
+    const bx = v => X0 + ((v - ini) / (fim - ini)) * (X1 - X0);
+    const by = n => Y1 - (n / maxN) * (Y1 - Y0);
+    let h = '';
+    for (let n = 0; n <= maxN; n += Math.max(1, Math.ceil(maxN / 4))) h += `<line class="grade-linha" x1="${X0}" x2="${X1}" y1="${by(n)}" y2="${by(n)}"/><text class="rotulo-eixo" x="${X0 - 8}" y="${by(n) + 4}" text-anchor="end">${n}</text>`;
+    for (let v = ini; v <= fim; v += (estreito ? 20 : 10)) h += `<text class="rotulo-eixo" x="${bx(v)}" y="${Y1 + 20}" text-anchor="middle">${v}</text>`;
+    h += `<text class="rotulo-eixo" x="${(X0 + X1) / 2}" y="${Y1 + 44}" text-anchor="middle">minutos de uso da ferramenta no momento da falha</text>`;
+    for (const b of bins) {
+      if (!b.n) continue;
+      const evitada = b.a >= troca;
+      const x = bx(b.a) + 1, w = bx(b.b) - bx(b.a) - 2, yTop = by(b.n), alt = Y1 - yTop;
+      // Topo arredondado de 4px, base reta
+      h += `<path d="M${x},${Y1}V${yTop + 4}q0,-4 4,-4h${w - 8}q4,0 4,4V${Y1}Z" fill="${evitada ? '#1d4ed8' : '#cbd5e1'}"><title>${b.a}–${b.b} min: ${b.n} falhas</title></path>`;
+    }
+    // Rótulo acima da área das barras, para nunca cobrir uma delas.
+    h += `<line x1="${bx(troca)}" x2="${bx(troca)}" y1="${Y0 - 22}" y2="${Y1}" stroke="#0f172a" stroke-width="1.5"/>`;
+    h += `<text x="${bx(troca) + (troca > 235 ? -8 : 8)}" y="${Y0 - 12}" text-anchor="${troca > 235 ? 'end' : 'start'}" font-size="13" font-weight="600" fill="#0f172a">troca aos ${troca} min</text>`;
+    svg.innerHTML = h;
+
+    const evitadasTodas = valores.filter(v => v >= troca).length;
+    // No teste: falhas de desgaste que o modelo deixou escapar e que a troca cobriria.
+    const f = melhor('fisica', tol);
+    let cobertas = 0;
+    for (const i of falhas) if (D.prob_fisica[i] < f.t && D.twf[i] && D.desgaste[i] >= troca) cobertas++;
+    const total = f.tp + cobertas;
+    $('combinado').innerHTML = `
+      <div class="cartao custo"><div class="nome">Falhas por desgaste evitadas</div><div class="valor">${evitadasTodas} de ${valores.length}</div><div class="detalhe">no dataset inteiro, com a troca aos ${troca} min</div></div>
+      <div class="cartao custo"><div class="nome"><i class="chip" style="background:var(--acao)"></i>Só o modelo</div><div class="valor">${fmt(por100(f))} em cada 100</div><div class="detalhe">${f.tp} de ${POS} falhas do teste</div></div>
+      <div class="cartao custo"><div class="nome"><i class="chip" style="background:var(--metrica)"></i>Modelo + troca preventiva</div><div class="valor" style="color:var(--metrica)">${fmt(100 * total / POS)} em cada 100</div><div class="detalhe">${total} de ${POS} falhas do teste</div></div>`;
+  }
+
+  // ── Orquestração ──
+  const tolEl = $('tolerancia'), trocaEl = $('troca');
+  function tudo() {
+    const tol = +tolEl.value, troca = +trocaEl.value;
+    $('toleranciaTexto').textContent = textoTolerancia(tol);
+    $('trocaTexto').textContent = `${troca} minutos de uso`;
+    desenharVersao('fisica', melhor('fisica', tol));
+    desenharVersao('brutas', melhor('brutas', tol));
+    desenharCurva(tol);
+    desenharCustos(tol);
+    desenharDesgaste(troca, tol);
+  }
+  $('nTwf').textContent = D.desgaste_twf_todas.length;
+  tolEl.addEventListener('input', tudo);
+  trocaEl.addEventListener('input', tudo);
+  $('custoFalha').addEventListener('input', () => desenharCustos(+tolEl.value));
+  $('custoInspecao').addEventListener('input', () => desenharCustos(+tolEl.value));
+  let redesenho;
+  window.addEventListener('resize', () => { clearTimeout(redesenho); redesenho = setTimeout(tudo, 120); });
+  desenharTabela();
+  tudo();
+})();
+</script>
+</body>
+</html>
